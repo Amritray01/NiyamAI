@@ -102,3 +102,44 @@ NiyamAI/
 2. **POST `/api/compare`**: Execute regional comparisons between FSSAI, FDA, and EFSA.
 3. **GET `/api/admin/metrics`**: Expose request counts, user distributions, and aggregated costs to authenticated administrator roles.
 4. **GET `/api/news`**: Display the latest food safety alerts and updates.
+
+---
+
+## 🧪 Evaluation History & Benchmark Evolution
+
+We establish a rigorous, local ground-truth evaluation process testing NiyamAI across 25 canonical test queries (covering exact clauses, numeric limits, semantic lookups, footnotes, amendments, and multi-document synthesis).
+
+### 📈 Evaluation Runs & Model Transitions
+
+#### Run 1: Raw Snippet Baseline (Baseline vs Advanced 1st Iteration)
+* **Nature**: Evaluated raw vector database text chunks directly without conversational LLM synthesis.
+* **LLM Judge**: `openai/gpt-oss-20b` (Zero-shot)
+* **Results**:
+  * **Answer Relevance**: **16.00%** (LLM judge penalized raw code-like table snippets for low natural language relevance)
+  * **Faithfulness**: **70.80%** (Strict statutory overlap, but conversational flow was missing)
+  * **Overall Judge Score**: **40.52%**
+
+#### Run 2: Conversational LLM Synthesis (LangChain Structure)
+* **Nature**: Switched from raw snippets to full natural language answers generated via a LangChain prompt template.
+* **LLM Judge**: `openai/gpt-oss-20b`
+* **Results**:
+  * **Answer Relevance**: **41.60%** (**+25.60% improvement**)
+  * **Faithfulness**: **48.24%** (Reflected strict hallucination audit over generated legal text)
+  * **Overall Judge Score**: **41.29%**
+
+#### Run 3: Active High-Fidelity LLM Judge (OpenAI 120B)
+* **Nature**: Upgraded RAG synthesis and the evaluation judge model to Groq's active high-fidelity 120B parameter model.
+* **LLM Judge**: `openai/gpt-oss-120b`
+* **Results**:
+  * **Answer Relevance**: **56.76%** (**+15.16% improvement**)
+  * **Faithfulness**: **52.84%**
+  * **Context Precision**: **50.08%**
+  * **Overall Judge Score**: **53.20%**
+
+#### Run 4 (Target Upgrade): Qdrant Native Hybrid Search + FlashRank Reranker
+* **Nature**: Upgrading vector storage to Qdrant (combining `BAAI/bge-large-en-v1.5` dense embeddings + SPLADE sparse token vectors) and applying CPU-optimized **FlashRank Reranking** (`ms-marco-MiniLM-L-6-v2`) before synthesis.
+* **Target Metric Goals**:
+  * **Recall@5**: **90.0%+**
+  * **LLM Faithfulness**: **85.0%+**
+  * **Answer Relevance**: **80.0%+**
+

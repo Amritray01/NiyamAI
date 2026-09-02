@@ -12,3 +12,6 @@ frontend/dist/
 backend/dist/
 .DS_Store
 Thumbs.db
+.niyam-env
+baseline_chroma/
+niyamai_chroma/
