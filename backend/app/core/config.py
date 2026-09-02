@@ -25,6 +25,8 @@ class Settings:
         # LLM Provider Keys
         self.google_api_key = getenv("GOOGLE_API_KEY", "")
         self.openai_api_key = getenv("OPENAI_API_KEY", "")
+        self.groq_api_key = getenv("GROQ_API_KEY", "")
+
 
 
 @lru_cache

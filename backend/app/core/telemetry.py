@@ -1,16 +1,15 @@
 """
-Basic Telemetry & Cost Calculation Module
+Telemetry & Cost Calculation Module
 
-This module provides starter functions for tracking API cost, token counts, and execution latency.
-You can replace or extend these functions to save logs directly into PostgreSQL.
+Provides utility functions for tracking API cost, token counts, and execution latency.
 """
 
-from typing import List
+from typing import List, Dict, Any
 from datetime import datetime
 import uuid
 
-# Sample mock in-memory store for user requests (Replace with PostgreSQL query)
-_MOCK_TELEMETRY_LOGS = []
+# In-memory session telemetry records
+_TELEMETRY_LOGS: List[Dict[str, Any]] = []
 
 # Model pricing rates per 1,000 tokens (USD)
 PRICING_RATES = {
@@ -21,13 +20,7 @@ PRICING_RATES = {
 
 
 def calculate_api_cost(prompt_tokens: int, completion_tokens: int, model_name: str = "default") -> float:
-    """
-    Calculate estimated API cost in USD based on input and output token counts.
-    
-    Implementation Idea:
-    Pass the token counts returned from your LangChain LLM response callback or API header
-    to compute exact cost per user request.
-    """
+    """Calculate estimated API cost in USD based on token counts."""
     rates = PRICING_RATES.get(model_name, PRICING_RATES["default"])
     cost = (prompt_tokens * rates["prompt"]) + (completion_tokens * rates["completion"])
     return round(cost, 6)
@@ -37,16 +30,11 @@ def record_request_telemetry(
     user_id: str,
     endpoint: str,
     execution_time_ms: float,
-    prompt_tokens: int = 150,
-    completion_tokens: int = 250,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
     model_name: str = "default"
-) -> dict:
-    """
-    Record a single request's telemetry log.
-    
-    Implementation Idea:
-    Insert this payload into your PostgreSQL `api_request_logs` table.
-    """
+) -> Dict[str, Any]:
+    """Record a single request's telemetry metrics."""
     total_tokens = prompt_tokens + completion_tokens
     cost = calculate_api_cost(prompt_tokens, completion_tokens, model_name)
     
@@ -62,10 +50,11 @@ def record_request_telemetry(
         "timestamp": datetime.utcnow().isoformat()
     }
     
-    _MOCK_TELEMETRY_LOGS.append(log_entry)
+    _TELEMETRY_LOGS.append(log_entry)
     return log_entry
 
 
-def get_all_telemetry_logs() -> List[dict]:
-    """Retrieve all recorded telemetry logs for the Admin dashboard."""
-    return _MOCK_TELEMETRY_LOGS
+def get_all_telemetry_logs() -> List[Dict[str, Any]]:
+    """Retrieve recorded telemetry logs."""
+    return _TELEMETRY_LOGS
+
