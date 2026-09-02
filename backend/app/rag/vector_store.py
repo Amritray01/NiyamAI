@@ -1,48 +1,153 @@
 """
-Vector Store Adapter (Qdrant Cloud)
-
-Provides connection helper for Qdrant Cloud and simple search starter function stubs.
+Vector & Keyword Storage Module (ChromaDB + rank-bm25)
 """
 
-from typing import List, Dict, Any
-from app.core.config import settings
+from __future__ import annotations
+
+import os
+import re
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+import chromadb
+from chromadb.config import Settings
+from rank_bm25 import BM25Okapi
+
+from app.rag.models import ChunkType, FSSAIChunk
 
 
-def get_qdrant_client():
-    """
-    Initialize and return QdrantClient instance for Qdrant Cloud.
-    
-    Implementation Idea:
-    from qdrant_client import QdrantClient
-    
-    if settings.qdrant_api_key:
-        return QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
-    return QdrantClient(url=settings.qdrant_url)
-    """
-    return None
+DEFAULT_CHROMA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "niyamai_chroma"))
 
 
-def search_fssai_vector_store(query: str, category: str = "All", top_k: int = 3) -> List[Dict[str, Any]]:
+class ChromaFSSAIStore:
     """
-    Basic vector search starter stub supporting category filtering and top_k parameters.
-    
-    Implementation Idea for Qdrant Cloud:
-    1. Generate embedding vector for `query`.
-    2. Build optional Qdrant Filter for `category`.
-    3. Query collection `settings.qdrant_collection` on Qdrant Cloud with limit `top_k`.
+    Persistent local vector store backed by ChromaDB with BAAI/bge-small-en-v1.5 embeddings.
     """
-    # Basic fallback starter structure until Qdrant Cloud collection is populated
-    return [
-        {
-            "document_name": "FSS (Food Additives) Regulations 2011",
-            "section": "Section 3.1.2 - Preservatives in Beverages",
-            "page": 14,
-            "verbatim_text": "Sodium Benzoate limit in synthetic syrups and fruit squashes shall not exceed 600 ppm."
-        },
-        {
-            "document_name": "FSS (Labelling & Display) Regulations 2020",
-            "section": "Clause 5(2) - Nutritional Information",
-            "page": 8,
-            "verbatim_text": "Every prepackaged food shall display energy value, protein, carbohydrate, total sugars, and added sugars per 100g or per serve."
+
+    def __init__(
+        self,
+        collection_name: str = "fssai_regulations",
+        persist_dir: str = DEFAULT_CHROMA_DIR,
+        embedding_fn: Optional[Callable[[List[str]], List[List[float]]]] = None,
+    ) -> None:
+        self._client = chromadb.PersistentClient(
+            path=persist_dir,
+            settings=Settings(anonymized_telemetry=False),
+        )
+        self._collection = self._client.get_or_create_collection(
+            name=collection_name,
+            metadata={"hnsw:space": "cosine"},
+        )
+        self._embed = embedding_fn or self._default_embed()
+
+    @staticmethod
+    def _default_embed() -> Callable[[List[str]], List[List[float]]]:
+        """Lazy load local sentence-transformer model on CPU."""
+        from sentence_transformers import SentenceTransformer
+        model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+        return lambda texts: model.encode(texts, batch_size=64, normalize_embeddings=True, show_progress_bar=False).tolist()
+
+    def upsert(self, chunks: List[FSSAIChunk]) -> None:
+        """Batch upsert chunks into ChromaDB."""
+        if not chunks:
+            return
+        # Deduplicate chunks by chunk_id to prevent ChromaDB DuplicateIDError
+        unique_map: Dict[str, FSSAIChunk] = {}
+        for c in chunks:
+            unique_map[c.chunk_id] = c
+        deduped_chunks = list(unique_map.values())
+
+        # Check existing IDs in collection to avoid re-embedding if already stored
+        existing_ids = set(self._collection.get(include=[])["ids"]) if self._collection.count() > 0 else set()
+        to_upsert = [c for c in deduped_chunks if c.chunk_id not in existing_ids]
+
+        if to_upsert:
+            embeddings = self._embed([c.embedding_text for c in to_upsert])
+            self._collection.upsert(
+                ids=[c.chunk_id for c in to_upsert],
+                embeddings=embeddings,
+                documents=[c.text for c in to_upsert],
+                metadatas=[c.metadata for c in to_upsert],
+            )
+
+
+    def query(
+        self,
+        query_text: str,
+        top_k: int = 10,
+        where: Optional[Dict[str, Any]] = None,
+    ) -> List[Tuple[FSSAIChunk, float]]:
+        """Dense cosine vector search with optional metadata where clause."""
+        qe = self._embed([query_text])[0]
+        kwargs: Dict[str, Any] = {
+            "query_embeddings": [qe],
+            "n_results": top_k,
+            "include": ["documents", "metadatas", "distances"],
         }
-    ]
+        if where:
+            kwargs["where"] = where
+
+        res = self._collection.query(**kwargs)
+
+        chunks_with_scores: List[Tuple[FSSAIChunk, float]] = []
+        if res["documents"] and res["documents"][0]:
+            for i, (doc, meta, dist) in enumerate(zip(
+                res["documents"][0],
+                res["metadatas"][0],
+                res["distances"][0],
+            )):
+                raw_ctype = meta.get("chunk_type", "clause")
+                try:
+                    ctype = ChunkType(raw_ctype)
+                except ValueError:
+                    ctype = ChunkType.CLAUSE
+
+                chunk = FSSAIChunk(
+                    chunk_id=res["ids"][0][i],
+                    chunk_type=ctype,
+                    source_doc=meta.get("source_doc", ""),
+                    page_numbers=[meta.get("page", 1)],
+                    text=doc,
+                    embedding_text=doc,
+                    metadata=meta,
+                )
+                chunks_with_scores.append((chunk, float(dist)))
+
+        return chunks_with_scores
+
+
+class BM25FSSAIIndex:
+    """In-process sparse BM25 index using rank-bm25 (BM25Okapi)."""
+    STOPWORDS = {
+        "what", "are", "the", "for", "in", "is", "of", "and", "a", "an", "to", "on", "as", 
+        "by", "various", "any", "which", "how", "much", "does", "do", "under", "with", 
+        "from", "shall", "be", "all", "such", "said", "or", "per", "at", "where"
+    }
+
+    def __init__(self) -> None:
+        self._chunks: List[FSSAIChunk] = []
+        self._index: Optional[BM25Okapi] = None
+
+    @classmethod
+    def _tokenize(cls, text: str) -> List[str]:
+        """Tokenize preserving compound terms and filtering generic stopwords."""
+        raw_tokens = re.findall(r"[\w./-]+", text.lower())
+        tokens = [t for t in raw_tokens if t not in cls.STOPWORDS and len(t) > 1]
+        return tokens or raw_tokens
+
+    def build(self, chunks: List[FSSAIChunk]) -> None:
+        """Build BM25 index over the provided chunks with contextual headers."""
+        self._chunks = chunks
+        corpus = [self._tokenize(f"{c.text} {c.embedding_text or ''}") for c in chunks]
+        self._index = BM25Okapi(corpus) if corpus else None
+
+    def query(self, query_text: str, top_k: int = 10) -> List[Tuple[FSSAIChunk, float]]:
+        if not self._index:
+            return []
+        tokens = self._tokenize(query_text)
+        scores = self._index.get_scores(tokens)
+        ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
+        return [
+            (self._chunks[i], float(score))
+            for i, score in ranked[:top_k]
+            if score > 0.0
+        ]

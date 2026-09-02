@@ -1,0 +1,67 @@
+{
+  "dataset_size": 25,
+  "overall_metrics": {
+    "advanced_pipeline": {
+      "hit@5": 0.6,
+      "mrr": 0.56,
+      "required_fact_coverage": 0.17
+    },
+    "baseline_1page_pipeline": {
+      "hit@5": 0.4,
+      "required_fact_coverage": 0.39
+    },
+    "groq_llm_as_a_judge": {
+      "active": true,
+      "model_used": "openai/gpt-oss-120b",
+      "avg_faithfulness": 0.5284,
+      "avg_answer_relevance": 0.5676,
+      "avg_context_precision": 0.5008,
+      "avg_overall_score": 0.532
+    },
+    "fact_coverage_improvement_pct": -22.0
+  },
+  "category_breakdown": {
+    "exact_clause": {
+      "adv_hit@5": 0.8,
+      "adv_mrr": 0.7,
+      "adv_fact_coverage": 0.25,
+      "base_hit@5": 0.4,
+      "base_fact_coverage": 0.6167
+    },
+    "numeric_limit": {
+      "adv_hit@5": 0.3333,
+      "adv_mrr": 0.25,
+      "adv_fact_coverage": 0.3333,
+      "base_hit@5": 0.0,
+      "base_fact_coverage": 0.6111
+    },
+    "semantic": {
+      "adv_hit@5": 0.5,
+      "adv_mrr": 0.5,
+      "adv_fact_coverage": 0.1667,
+      "base_hit@5": 0.25,
+      "base_fact_coverage": 0.3333
+    },
+    "footnote": {
+      "adv_hit@5": 1.0,
+      "adv_mrr": 1.0,
+      "adv_fact_coverage": 0.0,
+      "base_hit@5": 1.0,
+      "base_fact_coverage": 0.0
+    },
+    "amendment": {
+      "adv_hit@5": 0.75,
+      "adv_mrr": 0.75,
+      "adv_fact_coverage": 0.0,
+      "base_hit@5": 0.75,
+      "base_fact_coverage": 0.0833
+    },
+    "multi_document": {
+      "adv_hit@5": 0.3333,
+      "adv_mrr": 0.3333,
+      "adv_fact_coverage": 0.1111,
+      "base_hit@5": 0.3333,
+      "base_fact_coverage": 0.4444
+    }
+  }
+}

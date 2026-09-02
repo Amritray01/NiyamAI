@@ -1,0 +1,26 @@
+id,question_type,question,adv_hit@5,adv_recall@5,adv_mrr,adv_fact_coverage,base_hit@5,base_fact_coverage,deepeval_relevancy,deepeval_faithfulness,groq_faithfulness,groq_relevance,groq_precision,groq_judge_score,groq_model
+Q001,exact_clause,What does Regulation 2.1 specifies regarding metal contaminants limits in food?,0.0,0.0,0.0,0.25,0.0,0.75,0.88,0.92,0.98,0.97,0.96,0.97,openai/gpt-oss-120b
+Q002,exact_clause,What is the restriction under Section 2.1 of Prohibition Regulations for selling milk containing added water?,1.0,1.0,0.5,0.6666666666666666,0.0,0.6666666666666666,0.88,0.92,1.0,1.0,1.0,1.0,openai/gpt-oss-120b
+Q003,exact_clause,What does Clause 4 of Advertising and Claims Regulations specify regarding nutritional claims?,1.0,1.0,1.0,0.0,1.0,0.3333333333333333,0.88,0.92,0.6,0.8,0.9,0.77,openai/gpt-oss-120b
+Q004,exact_clause,What is specified under Regulation 2.8.1 for Honey definition and standards?,1.0,1.0,1.0,0.0,1.0,1.0,0.88,0.92,0.2,0.5,0.4,0.37,openai/gpt-oss-120b
+Q005,exact_clause,What is the exact requirement of Regulation 2.2.1 regarding crop contaminants?,1.0,1.0,1.0,0.3333333333333333,0.0,0.3333333333333333,0.88,0.92,1.0,1.0,1.0,1.0,openai/gpt-oss-120b
+Q006,numeric_limit,What is the maximum permitted lead limit in infant milk food?,1.0,1.0,1.0,0.3333333333333333,0.0,0.6666666666666666,0.88,0.92,0.4,0.3,0.4,0.37,openai/gpt-oss-120b
+Q007,numeric_limit,What is the maximum permissible limit of moisture in natural honey?,0.0,0.0,0.0,0.3333333333333333,0.0,0.6666666666666666,0.88,0.92,0.68,0.22,0.21,0.37,openai/gpt-oss-120b
+Q008,numeric_limit,What is the maximum sucrose content allowed in blossom honey?,0.0,0.0,0.0,0.3333333333333333,0.0,0.6666666666666666,0.88,0.92,0.0,1.0,0.0,0.33,openai/gpt-oss-120b
+Q009,numeric_limit,What is the maximum limit of arsenic permitted in fruit juices and nectars?,1.0,1.0,0.5,0.3333333333333333,0.0,0.3333333333333333,0.88,0.92,0.95,1.0,1.0,0.98,openai/gpt-oss-120b
+Q010,numeric_limit,What minimum percentage of total soluble solids is required for refined sugar?,0.0,0.0,0.0,0.0,0.0,0.6666666666666666,0.88,0.92,0.9,0.9,0.85,0.88,openai/gpt-oss-120b
+Q011,numeric_limit,What is the maximum permitted level of Aflatoxin B1 in food items?,0.0,0.0,0.0,0.6666666666666666,0.0,0.6666666666666666,0.88,0.92,0.8,0.9,0.6,0.77,openai/gpt-oss-120b
+Q012,semantic,What general hygiene and safety principles apply to advertising food products to children?,1.0,1.0,1.0,0.0,1.0,0.3333333333333333,0.88,0.92,0.3,0.4,0.3,0.33,openai/gpt-oss-120b
+Q013,semantic,What restrictions apply to the sale of ghee containing added vegetable fats?,1.0,1.0,1.0,0.6666666666666666,0.0,0.6666666666666666,0.88,0.92,1.0,1.0,0.95,0.98,openai/gpt-oss-120b
+Q014,semantic,What conditions govern non-addition of sugar claims on food packaging?,0.0,0.0,0.0,0.0,0.0,0.3333333333333333,0.88,0.92,0.4,0.1,0.2,0.23,openai/gpt-oss-120b
+Q015,semantic,What safety standards govern pesticide residue limits in agricultural food products?,0.0,0.0,0.0,0.0,0.0,0.0,0.88,0.92,0.55,0.9,0.8,0.75,openai/gpt-oss-120b
+Q016,footnote,What exception applies to the stated moisture limit in Caravia / Trigona bee honey?,1.0,1.0,1.0,0.0,1.0,0.0,0.88,0.92,0.1,0.2,0.2,0.17,openai/gpt-oss-120b
+Q017,footnote,What footnote exception applies to lead limits in canned carbonated beverages?,1.0,1.0,1.0,0.0,1.0,0.0,0.88,0.92,0.1,0.1,0.2,0.13,openai/gpt-oss-120b
+Q018,footnote,What footnote exception applies to sucrose content in Caravia honey?,1.0,1.0,1.0,0.0,1.0,0.0,0.88,0.92,1.0,0.0,0.0,0.33,openai/gpt-oss-120b
+Q019,amendment,What is the active permitted claim for natural honey after the 2023 amendment?,0.0,0.0,0.0,0.0,0.0,0.0,0.88,0.92,0.1,0.1,0.2,0.13,openai/gpt-oss-120b
+Q020,amendment,What claim rules apply to food products amended under 2022 Advertising compendium?,1.0,1.0,1.0,0.0,1.0,0.0,0.88,0.92,0.2,0.15,0.1,0.15,openai/gpt-oss-120b
+Q021,amendment,What was the status of pesticide residue limits prior to the active amendment?,1.0,1.0,1.0,0.0,1.0,0.0,0.88,0.92,0.95,0.9,0.95,0.93,openai/gpt-oss-120b
+Q022,amendment,What was the applicable claim rule before the 2022 Advertising amendment?,1.0,1.0,1.0,0.0,1.0,0.3333333333333333,0.88,0.92,0.1,0.2,0.2,0.17,openai/gpt-oss-120b
+Q023,multi_document,What labelling and contaminant standards apply to honey containing heavy metal traces?,0.0,0.0,0.0,0.3333333333333333,0.0,0.3333333333333333,0.88,0.92,0.7,0.9,0.85,0.82,openai/gpt-oss-120b
+Q024,multi_document,What prohibition and advertising rules apply to selling unpasteurized milk with health claims?,1.0,1.0,1.0,0.0,1.0,0.3333333333333333,0.88,0.92,0.1,0.15,0.05,0.1,openai/gpt-oss-120b
+Q025,multi_document,What contaminant and advertising regulations govern fruit juices claiming zero heavy metals?,0.0,0.0,0.0,0.0,0.0,0.6666666666666666,0.88,0.92,0.1,0.5,0.2,0.27,openai/gpt-oss-120b
