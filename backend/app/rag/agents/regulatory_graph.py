@@ -106,7 +106,7 @@ def node_hybrid_retrieve(state: RegulatoryAgentState) -> Dict[str, Any]:
     # Step A: Filtered Category Search
     all_results: Dict[str, HybridSearchResult] = {}
     for q_text in queries[:3]:
-        sub_results = retriever.retrieve(query=q_text, top_k=5, category=filter_category, active_only=True, rerank=False)
+        sub_results = retriever.retrieve(query=q_text, top_k=20, category=filter_category, active_only=True, rerank=False)
         for r in sub_results:
             cid = r.chunk.chunk_id
             if cid not in all_results or r.rrf_score > all_results[cid].rrf_score:
@@ -115,23 +115,24 @@ def node_hybrid_retrieve(state: RegulatoryAgentState) -> Dict[str, Any]:
     # Step B: Fallback into Overall Agent Search if filtered yields fewer than 2 results
     if len(all_results) < 2 and filter_category is not None:
         for q_text in queries[:3]:
-            fallback_sub = retriever.retrieve(query=q_text, top_k=5, category=None, active_only=True, rerank=False)
+            fallback_sub = retriever.retrieve(query=q_text, top_k=20, category=None, active_only=True, rerank=False)
             for r in fallback_sub:
                 cid = r.chunk.chunk_id
                 if cid not in all_results or r.rrf_score > all_results[cid].rrf_score:
                     all_results[cid] = r
 
-    combined = sorted(all_results.values(), key=lambda x: x.rrf_score, reverse=True)[:10]
+    combined = sorted(all_results.values(), key=lambda x: x.rrf_score, reverse=True)[:20]
     return {"results": combined}
 
 
 def node_rerank(state: RegulatoryAgentState) -> Dict[str, Any]:
     retriever: FSSAIRetriever = state["retriever"]
     candidates = state.get("results", [])
-    if len(candidates) > 1:
-        reranked = retriever._reranker.rerank(state["question"], candidates, top_k=5)
+    top_candidates = candidates[:20]
+    if len(top_candidates) > 1:
+        reranked = retriever._reranker.rerank(state["question"], top_candidates, top_k=7)
     else:
-        reranked = candidates[:5]
+        reranked = top_candidates[:7]
     return {"results": reranked}
 
 
@@ -179,7 +180,7 @@ Hypothetical FSSAI Schedule Excerpt:"""
 
         # Execute 2nd-hop HyDE search across vector store
         retriever: FSSAIRetriever = state["retriever"]
-        hyde_results = retriever.retrieve(query=hyde_doc, top_k=5, category=None, active_only=True, rerank=False)
+        hyde_results = retriever.retrieve(query=hyde_doc, top_k=20, category=None, active_only=True, rerank=False)
 
         merged: Dict[str, HybridSearchResult] = {r.chunk.chunk_id: r for r in results}
         for hr in hyde_results:
@@ -187,8 +188,8 @@ Hypothetical FSSAI Schedule Excerpt:"""
             if cid not in merged:
                 merged[cid] = hr
 
-        new_candidates = sorted(merged.values(), key=lambda x: x.rrf_score, reverse=True)[:15]
-        reranked = retriever._reranker.rerank(question, new_candidates, top_k=5)
+        new_candidates = sorted(merged.values(), key=lambda x: x.rrf_score, reverse=True)[:20]
+        reranked = retriever._reranker.rerank(question, new_candidates, top_k=7)
         return {"results": reranked, "iteration": iteration + 1}
 
     return {"iteration": iteration + 1}
@@ -226,7 +227,7 @@ def node_synthesize(state: RegulatoryAgentState) -> Dict[str, Any]:
 
     context_str = "\n\n---\n\n".join([
         f"Document: {c.source_doc} (Page {c.page_numbers[0] if c.page_numbers else 1})\nContext: {c.text}"
-        for c in chunks[:4]
+        for c in chunks[:7]
     ])
     formatted_prompt = langchain_prompt.format(question=question, context=context_str)
 

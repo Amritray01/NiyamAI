@@ -105,7 +105,7 @@ def run_staged_benchmark(
             expected_chunk_ids=expected_ids,
             required_facts=required_facts,
             category_filter=cat_filter,
-            top_k=5,
+            top_k=7,
         )
 
         row: Dict[str, Any] = {"id": qid, "question_type": qtype, "question": qtext}
@@ -139,26 +139,26 @@ def run_staged_benchmark(
     json_path = os.path.join(out_dir, "staged_summary.json")
     summary = {
         "dataset_size": tot_queries,
-        "metrics_description": "Evaluated Hit@1, Hit@3, Hit@5, MRR, Recall@5, Fact Coverage (No nDCG)",
+        "metrics_description": "Evaluated Hit@1, Hit@3, Hit@5, Hit@7, MRR, Recall@7, Fact Coverage (No nDCG)",
         "stage_progression": stage_averages,
     }
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
-    print("\n=========================================================================================", flush=True)
-    print("                    PROGRESSION ACROSS ARCHITECTURAL STAGES                              ", flush=True)
-    print("=========================================================================================", flush=True)
-    print(f"{'Stage Name':<26} | {'Hit@1':<8} | {'Hit@3':<8} | {'Hit@5':<8} | {'MRR':<8} | {'Fact Cover':<10}", flush=True)
-    print("-" * 89, flush=True)
+    print("\n=======================================================================================================", flush=True)
+    print("                              PROGRESSION ACROSS ARCHITECTURAL STAGES                                  ", flush=True)
+    print("=======================================================================================================", flush=True)
+    print(f"{'Stage Name':<24} | {'Hit@1':<7} | {'Hit@3':<7} | {'Hit@5':<7} | {'Hit@7':<7} | {'Recall@7':<9} | {'MRR':<7} | {'Fact Cover':<10}", flush=True)
+    print("-" * 103, flush=True)
     for s in stages:
         avg = stage_averages[s]
         stage_label = s.replace("stage_", "Stage ").replace("_", " ").title()
         print(
-            f"{stage_label:<26} | {avg['hit@1']*100:>6.1f}% | {avg['hit@3']*100:>6.1f}% | "
-            f"{avg['hit@5']*100:>6.1f}% | {avg['mrr']:>8.4f} | {avg['fact_coverage']*100:>8.1f}%",
+            f"{stage_label:<24} | {avg.get('hit@1', 0.0)*100:>5.1f}% | {avg.get('hit@3', 0.0)*100:>5.1f}% | "
+            f"{avg.get('hit@5', 0.0)*100:>5.1f}% | {avg.get('hit@7', 0.0)*100:>5.1f}% | {avg.get('recall@7', 0.0)*100:>7.1f}% | {avg.get('mrr', 0.0):>7.4f} | {avg.get('fact_coverage', 0.0)*100:>8.1f}%",
             flush=True,
         )
-    print("=========================================================================================\n", flush=True)
+    print("=======================================================================================================\n", flush=True)
     print(f"Detailed CSV Report : {csv_path}", flush=True)
     print(f"Summary JSON Report : {json_path}\n", flush=True)
 

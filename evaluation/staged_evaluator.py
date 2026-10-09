@@ -21,13 +21,13 @@ class StagedRAGEvaluator:
         self.rrf = RRFCombiner(k=60)
         self.reranker = FlashRankFSSAIReranker()
 
-    def inspect_query_steps(self, query: str, top_k: int = 5) -> Dict[str, Any]:
-        candidate_k = top_k * 3
+    def inspect_query_steps(self, query: str, top_k: int = 7) -> Dict[str, Any]:
+        candidate_k = 20
 
         dense = self.vs.query(query, top_k=candidate_k)
         sparse = self.bm25.query(query, top_k=candidate_k)
         fused = self.rrf.fuse(dense, sparse, query=query)
-        reranked = self.reranker.rerank(query, fused[:15], top_k=top_k)
+        reranked = self.reranker.rerank(query, fused[:20], top_k=top_k)
 
         return {
             "query": query,
@@ -43,7 +43,7 @@ class StagedRAGEvaluator:
         expected_chunk_ids: List[str],
         required_facts: List[str],
         category_filter: Optional[str] = None,
-        top_k: int = 5,
+        top_k: int = 7,
     ) -> Dict[str, Dict[str, float]]:
         where_filter = {"category": {"$eq": category_filter}} if category_filter and category_filter != "All" else None
 
@@ -58,6 +58,6 @@ class StagedRAGEvaluator:
         ]
 
         return {
-            stage_name: self.evaluator.evaluate_query(chunks, expected_chunk_ids, required_facts, k_values=[1, 3, 5])
+            stage_name: self.evaluator.evaluate_query(chunks, expected_chunk_ids, required_facts, k_values=[1, 3, 5, 7])
             for stage_name, chunks in stage_queries
         }

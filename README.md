@@ -28,11 +28,11 @@ flowchart TD
 
     subgraph Retrieval ["3. Multi-Stage Hybrid Retrieval & Fusion"]
         Query["User Legal / Compliance Query"] --> Synset["FSSAI Synset Expansion"]
-        Synset --> Dense["1. Dense Vector Search (Top-K)"]
-        Synset --> Sparse["2. BM25 Sparse Search (Top-K)"]
-        Dense & Sparse --> RRF["3. Reciprocal Rank Fusion (RRF: k=60)"]
+        Synset --> Dense["1. Dense Vector Search (Top-20)"]
+        Synset --> Sparse["2. BM25 Sparse Search (Top-20)"]
+        Dense & Sparse --> RRF["3. Reciprocal Rank Fusion (Top-20 Combined, k=60)"]
         RRF --> Reranker["4. FlashRank Cross-Encoder Reranker"]
-        Reranker --> TopDocs["Top-N Highly Relevant Regulatory Chunks"]
+        Reranker --> TopDocs["Top-7 Relevant Statutory Chunks"]
     end
 
     subgraph Generation ["4. Guarded Synthesis & Citation"]
@@ -61,10 +61,12 @@ flowchart TD
    - **Qdrant**: Primary high-performance production store supporting native payload filtering, HNSW vector search, and scalable cloud clustering.
    - **ChromaDB**: Dedicated local in-memory/embedded store for headless test runners, CI/CD pipelines, and ground-truth evaluation.
 5. **Hybrid Search with Reciprocal Rank Fusion (RRF)**:
-   - Fuses dense semantic vector rankings ($D$) from `BAAI/bge-small-en-v1.5` and BM25 sparse lexical rankings ($S$) using:
+   - Retrieves **Top-20** dense semantic vector candidates ($D$) from `BAAI/bge-small-en-v1.5` and **Top-20** BM25 sparse lexical candidates ($S$).
+   - Fuses and deduplicates rankings using:
      $$RRF(d) = \sum_{m \in \{D, S\}} \frac{1}{k + r_m(d)} \quad \text{with } k=60$$
-6. **FlashRank Cross-Encoder Reranking**:
-   - Performs deep query-document cross-attention using ultra-fast, CPU-optimized transformer rerankers (`ms-marco-TinyBERT-L-2-v2`) to eliminate dense false positives.
+   - Retains the **Top-20 combined candidates** to provide sufficient headroom for multi-document synthesis and commodity tables.
+6. **FlashRank Cross-Encoder Reranking (Top-7 Selection)**:
+   - Performs deep query-document cross-attention over the Top-20 combined pool using ultra-fast, CPU-optimized transformer rerankers (`ms-marco-TinyBERT-L-2-v2`) to surface the definitive **Top-7 statutory chunks** for LLM synthesis.
 7. **LangGraph Agentic Search & Numeric Assertion Guard**:
    - Evaluates retrieved chunk completeness, triggers 2nd-hop HyDE expansion for numeric queries, and scans generated answers against source document chunks to verify exact numeric thresholds (e.g., `0.02 mg/kg`, `15 ppb`, `99.8%`) before emitting answers.
 
@@ -78,12 +80,12 @@ We evaluated NiyamAI across the 25-query canonical Golden Dataset covering **Exa
 
 The modular evaluation compares retrieval performance across each architectural layer:
 
-| Architectural Stage | Strategy Description | Hit@1 | Hit@3 | Hit@5 | MRR | Fact Coverage |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Stage 1: Baseline BM25** | Pure BM25 Lexical Keyword Search | 4.0% | 4.0% | 4.0% | 0.0400 | 25.0% |
-| **Stage 2: Semantic Only** | Dense Embeddings (`BAAI/bge-small-en-v1.5`) | 4.0% | 4.0% | 16.0% | 0.0680 | 21.0% |
-| **Stage 3: Filtered Search** | Metadata-Constrained Dense Search | 4.0% | 4.0% | 16.0% | 0.0680 | 21.0% |
-| **Stage 4: Hybrid + Rerank** | **Dense (bge-small) + BM25 + RRF + FlashRank** | **4.0%** | **8.0%** | **20.0%** | **0.0680** | **24.0%** |
+| Architectural Stage | Strategy Description | Hit@1 | Hit@3 | Hit@5 | Hit@7 | Recall@7 | MRR | Fact Coverage |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Stage 1: Baseline BM25** | Pure BM25 Lexical Keyword Search | 16.0% | 36.0% | 52.0% | 56.0% | 37.3% | 0.2930 | 29.0% |
+| **Stage 2: Semantic Only** | Dense Embeddings (`BAAI/bge-small-en-v1.5`) | 8.0% | 20.0% | 32.0% | 32.0% | 14.7% | 0.1547 | 21.0% |
+| **Stage 3: Filtered Search** | Metadata-Constrained Dense Search | 8.0% | 20.0% | 32.0% | 32.0% | 14.7% | 0.1547 | 21.0% |
+| **Stage 4: Hybrid + Rerank** | **Dense (top 20) + BM25 (top 20) + RRF (top 20) + FlashRank (top 7)** | **28.0%** | **52.0%** | **52.0%** | **60.0%** | **38.7%** | **0.3924** | **26.3%** |
 
 ### 🤖 RAGAS & Generation Quality Evaluation (LLM-as-a-Judge)
 

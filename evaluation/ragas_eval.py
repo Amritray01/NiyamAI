@@ -42,7 +42,7 @@ class GroqRagasJudge:
         q_words = [w for w in query.lower().split() if len(w) > 3]
         term_matches = sum(1 for w in q_words if w in all_context)
         fact_density = (term_matches / len(q_words)) if q_words else 0.5
-        grounded_confidence = round(min(0.98, max(0.20, (fact_density * 0.70) + (min(5, len(retrieved_contexts)) * 0.06))), 2)
+        grounded_confidence = round(min(0.98, max(0.20, (fact_density * 0.70) + (min(7, len(retrieved_contexts)) * 0.043))), 2)
 
         if not self.client:
             return {
@@ -57,7 +57,7 @@ class GroqRagasJudge:
                 "reasoning": "GROQ_API_KEY not configured or client unavailable. Zeroed score without synthetic fallback.",
             }
 
-        context_str = "\n---\n".join(retrieved_contexts[:4])
+        context_str = "\n---\n".join(retrieved_contexts[:7])
         prompt = f"""You are an expert FSSAI legal compliance auditor evaluating an AI assistant's Long-Format Explainable AI (xAI) Regulatory Document against retrieved statutory regulations.
 
 User Query: {query}
@@ -181,7 +181,7 @@ def run_ragas_benchmark(
             generated_answer = f"{rag_res.summary}\n\n{rag_res.detailed_analysis}"
             contexts = [c.verbatim_text for c in rag_res.citations if getattr(c, "verbatim_text", None)]
             if not contexts:
-                retrieved_chunks = retriever.retrieve(qtext, top_k=4, category=cat_filter if cat_filter != "All" else None)
+                retrieved_chunks = retriever.retrieve(qtext, top_k=7, category=cat_filter if cat_filter != "All" else None)
                 contexts = [r.chunk.text for r in retrieved_chunks]
         except Exception as e:
             generated_answer = f"Error during generation: {str(e)}"

@@ -44,7 +44,7 @@ def stream_fssai_rag_search(question: str, category: str = "All") -> Generator[s
     all_results: dict = {}
 
     for q_text in expanded_queries[:3]:
-        sub_results = retriever.retrieve(query=q_text, top_k=5, category=filter_cat, active_only=True, rerank=False)
+        sub_results = retriever.retrieve(query=q_text, top_k=20, category=filter_cat, active_only=True, rerank=False)
         for r in sub_results:
             cid = r.chunk.chunk_id
             if cid not in all_results or r.rrf_score > all_results[cid].rrf_score:
@@ -53,7 +53,7 @@ def stream_fssai_rag_search(question: str, category: str = "All") -> Generator[s
     # Step 1B: Fallback to Overall Agent Search across all categories if filtered results < 2
     if len(all_results) < 2 and filter_cat is not None:
         for q_text in expanded_queries[:3]:
-            fallback_sub = retriever.retrieve(query=q_text, top_k=5, category=None, active_only=True, rerank=False)
+            fallback_sub = retriever.retrieve(query=q_text, top_k=20, category=None, active_only=True, rerank=False)
             for r in fallback_sub:
                 cid = r.chunk.chunk_id
                 if cid not in all_results or r.rrf_score > all_results[cid].rrf_score:
@@ -61,9 +61,9 @@ def stream_fssai_rag_search(question: str, category: str = "All") -> Generator[s
 
     candidates = sorted(all_results.values(), key=lambda x: x.rrf_score, reverse=True)[:20]
     if len(candidates) > 1:
-        results = retriever._reranker.rerank(question, candidates, top_k=5)
+        results = retriever._reranker.rerank(question, candidates, top_k=7)
     else:
-        results = candidates[:5]
+        results = candidates[:7]
 
     chunks = [r.chunk for r in results]
 
@@ -100,7 +100,7 @@ def stream_fssai_rag_search(question: str, category: str = "All") -> Generator[s
     # Step 3: Stream LLM Generation
     context_str = "\n\n---\n\n".join([
         f"Document: {c.source_doc} (Page {c.page_numbers[0] if c.page_numbers else 1})\nContext: {c.text}"
-        for c in chunks[:4]
+        for c in chunks[:7]
     ])
 
     prompt = f"""You are NiyamAI, the premier FSSAI Statutory Compliance & Regulatory Intelligence AI for India.

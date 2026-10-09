@@ -112,7 +112,7 @@ class FSSAIRetriever:
     def retrieve(
         self,
         query: str,
-        top_k: int = 5,
+        top_k: int = 7,
         *,
         regulation_id: Optional[str] = None,
         category: Optional[str] = None,
@@ -127,7 +127,8 @@ class FSSAIRetriever:
             active_only, chunk_type, is_binding,
         )
 
-        candidate_k = max(25, top_k * 5)
+        # Top 20 from both BM25 and Semantic (Dense) rank
+        candidate_k = 20
         dense = self._vs.query(query, top_k=candidate_k, where=where or None)
 
         sparse_raw = self._bm25.query(query, top_k=candidate_k)
@@ -140,7 +141,7 @@ class FSSAIRetriever:
         ]
 
         fused = self._rrf.fuse(dense, sparse, query=query)
-        # Pass Top-20 RRF fused candidates to FlashRank Cross-Encoder for Top-K final selection
+        # Top 20 combined from RRF fusion passed to FlashRank Cross-Encoder for Top 7 final selection
         top_20_fused = fused[:20]
         if rerank and len(top_20_fused) > 1:
             return self._reranker.rerank(query, top_20_fused, top_k=top_k)
