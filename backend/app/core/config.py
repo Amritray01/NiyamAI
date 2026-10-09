@@ -1,5 +1,13 @@
+import os
 from functools import lru_cache
 from os import getenv
+from dotenv import load_dotenv
+
+# Load .env from project root or backend folder
+root_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
+backend_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+load_dotenv(root_env)
+load_dotenv(backend_env)
 
 
 class Settings:
@@ -11,22 +19,16 @@ class Settings:
             for origin in getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
             if origin.strip()
         ]
-        # NeonDB PostgreSQL Connection
         self.database_url = getenv(
             "DATABASE_URL",
-            "postgresql://user:password@ep-sample-123456.us-east-2.aws.neon.tech/neondb?sslmode=require"
+            "postgresql://user:password@ep-sample-123456.us-east-2.aws.neon.tech/neondb?sslmode=require",
         )
-        
-        # Qdrant Cloud Connection
         self.qdrant_url = getenv("QDRANT_URL", "https://your-cluster-id.us-east4-0.gcp.cloud.qdrant.io:6333")
         self.qdrant_api_key = getenv("QDRANT_API_KEY", "")
         self.qdrant_collection = getenv("QDRANT_COLLECTION", "fssai_regulations")
-        
-        # LLM Provider Keys
         self.google_api_key = getenv("GOOGLE_API_KEY", "")
         self.openai_api_key = getenv("OPENAI_API_KEY", "")
         self.groq_api_key = getenv("GROQ_API_KEY", "")
-
 
 
 @lru_cache

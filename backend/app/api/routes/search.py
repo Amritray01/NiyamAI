@@ -1,23 +1,29 @@
 import time
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+
+from app.rag.chains import run_fssai_rag_search, stream_fssai_rag_search
 from app.schemas.regulatory import SearchRequest, SearchResponse
-from app.rag.chains import run_fssai_rag_search
 
 router = APIRouter(tags=["search"])
 
 
 @router.post("/search", response_model=SearchResponse)
 def search_fssai(request: SearchRequest) -> SearchResponse:
-    """
-    FSSAI Regulatory Search Endpoint.
-    Executes RAG search and returns explainable analysis with verbatim citations.
-    """
     start_time = time.time()
-    
-    # Execute RAG search
     response = run_fssai_rag_search(request.question, category=request.category or "All")
-    
-    execution_time_ms = (time.time() - start_time) * 1000
-    response.execution_time_ms = round(execution_time_ms, 2)
-    
+    response.execution_time_ms = round((time.time() - start_time) * 1000, 2)
     return response
+
+
+@router.post("/search/stream")
+def search_fssai_stream(request: SearchRequest):
+    return StreamingResponse(
+        stream_fssai_rag_search(request.question, category=request.category or "All"),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
