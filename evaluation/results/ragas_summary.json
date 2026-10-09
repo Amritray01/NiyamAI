@@ -1,0 +1,58 @@
+{
+  "dataset_size": 25,
+  "overall_metrics": {
+    "groq_ragas_judge": {
+      "active": true,
+      "model_used": "openai/gpt-oss-120b",
+      "avg_faithfulness": 0.4772,
+      "avg_answer_relevance": 0.6332,
+      "avg_context_precision": 0.5136,
+      "avg_ingredient_accuracy": 0.6792,
+      "avg_overall_score": 0.5781
+    }
+  },
+  "category_breakdown": {
+    "exact_clause": {
+      "avg_faithfulness": 0.538,
+      "avg_answer_relevance": 0.802,
+      "avg_context_precision": 0.612,
+      "avg_overall_score": 0.612,
+      "sample_count": 5
+    },
+    "numeric_limit": {
+      "avg_faithfulness": 0.5367,
+      "avg_answer_relevance": 0.5133,
+      "avg_context_precision": 0.5133,
+      "avg_overall_score": 0.5783,
+      "sample_count": 6
+    },
+    "semantic": {
+      "avg_faithfulness": 0.6625,
+      "avg_answer_relevance": 0.745,
+      "avg_context_precision": 0.575,
+      "avg_overall_score": 0.7025,
+      "sample_count": 4
+    },
+    "footnote": {
+      "avg_faithfulness": 0.4667,
+      "avg_answer_relevance": 0.4667,
+      "avg_context_precision": 0.5,
+      "avg_overall_score": 0.5283,
+      "sample_count": 3
+    },
+    "amendment": {
+      "avg_faithfulness": 0.305,
+      "avg_answer_relevance": 0.57,
+      "avg_context_precision": 0.495,
+      "avg_overall_score": 0.5225,
+      "sample_count": 4
+    },
+    "multi_document": {
+      "avg_faithfulness": 0.25,
+      "avg_answer_relevance": 0.6933,
+      "avg_context_precision": 0.3067,
+      "avg_overall_score": 0.4792,
+      "sample_count": 3
+    }
+  }
+}

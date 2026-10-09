@@ -13,10 +13,10 @@
     "groq_llm_as_a_judge": {
       "active": true,
       "model_used": "openai/gpt-oss-120b",
-      "avg_faithfulness": 0.5284,
-      "avg_answer_relevance": 0.5676,
-      "avg_context_precision": 0.5008,
-      "avg_overall_score": 0.532
+      "avg_faithfulness": 0.4772,
+      "avg_answer_relevance": 0.6332,
+      "avg_context_precision": 0.5136,
+      "avg_overall_score": 0.5781
     },
     "fact_coverage_improvement_pct": -22.0
   },

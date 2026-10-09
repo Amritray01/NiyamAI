@@ -1,18 +1,12 @@
-"""
-NiyamAI Benchmark Evaluation Runner (Baseline vs Advanced FSSAI Pipeline)
-"""
-
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import os
 import sys
-import time
 from typing import Any, Dict, List
 
-
-# Add root project and backend directories to Python path
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 backend_dir = os.path.join(root_dir, "backend")
 if root_dir not in sys.path:
@@ -20,21 +14,23 @@ if root_dir not in sys.path:
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
-from app.rag.pipeline import FSSAIIngestionPipeline, BaselineIngestionPipeline
-from app.rag.chains import run_fssai_rag_search
-from evaluation.retrieval_eval import RetrievalEvaluator
-from evaluation.deepeval_suite import run_deepeval_test_case
-from evaluation.ragas_eval import GroqRagasJudge
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
-
-
+from app.rag.pipeline import FSSAIIngestionPipeline
+from evaluation.staged_evaluator import StagedRAGEvaluator
 
 
 def load_golden_dataset(path: str = "./evaluation/golden_dataset.jsonl") -> List[Dict[str, Any]]:
-    dataset = []
+    dataset: List[Dict[str, Any]] = []
     if not os.path.exists(path):
-        print(f"[Eval Error] Dataset not found at: {path}")
+        alt_path = os.path.join(root_dir, "evaluation", "golden_dataset.jsonl")
+        path = alt_path if os.path.exists(alt_path) else path
+
+    if not os.path.exists(path):
+        print(f"[Eval Error] Dataset not found at: {path}", flush=True)
         return dataset
+
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             if line.strip():
@@ -42,203 +38,140 @@ def load_golden_dataset(path: str = "./evaluation/golden_dataset.jsonl") -> List
     return dataset
 
 
-def run_benchmark():
-    pdf_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend", "app", "data", "raw", "pdfs"))
+def run_staged_benchmark(
+    inspect_sample_steps: bool = True,
+    use_chroma: bool = True,
+) -> Dict[str, Any]:
+    pdf_dir = os.path.join(backend_dir, "app", "data", "raw", "pdfs")
     pdf_files = [
         os.path.join(pdf_dir, f)
         for f in os.listdir(pdf_dir)
         if f.endswith(".pdf")
     ] if os.path.exists(pdf_dir) else []
 
-    print(f"\n=======================================================")
-    print(f"  NiyamAI RAG Evaluation & Benchmark Suite")
-    print(f"=======================================================")
-    print(f"Found {len(pdf_files)} PDFs in target folder: {pdf_dir}\n")
+    print("\n=======================================================", flush=True)
+    print("   NiyamAI Modular Stage & Step Evaluation Benchmark   ", flush=True)
+    print("=======================================================", flush=True)
+    print(f"Target Documents : {len(pdf_files)} PDFs in {pdf_dir}", flush=True)
+    print(f"Backend Store    : {'ChromaDB (Test Mode)' if use_chroma else 'Qdrant (Production Mode)'}", flush=True)
 
-    # 1. Ingest into Advanced Pipeline
-    print("[1/4] Ingesting PDFs into Advanced FSSAI Pipeline (Row Tables + Clauses + RRF)...")
-    adv_pipeline = FSSAIIngestionPipeline(chroma_persist="./niyamai_chroma")
-    adv_pipeline.ingest_batch(pdf_files)
-    adv_retriever = adv_pipeline.get_retriever()
+    print("\n[Step 1/3] Initializing Ingestion & Hybrid Indices...", flush=True)
+    pipeline = FSSAIIngestionPipeline(use_chroma=use_chroma)
+    pipeline.ingest_batch(pdf_files)
+    retriever = pipeline.get_retriever()
 
-    # 2. Ingest into Baseline Pipeline
-    print("\n[2/4] Ingesting PDFs into Baseline Pipeline (1-Page Chunker)...")
-    base_pipeline = BaselineIngestionPipeline(chroma_persist="./baseline_chroma")
-    base_pipeline.ingest_batch(pdf_files)
-    base_retriever = base_pipeline.get_retriever()
+    staged_evaluator = StagedRAGEvaluator(
+        retriever=retriever,
+        vector_store=pipeline._vector_store,
+        bm25_index=pipeline._bm25,
+    )
 
-    # 3. Load Golden Dataset
-    print("\n[3/4] Loading Golden Dataset (25 Canonical Cases)...")
     golden_dataset = load_golden_dataset()
-    print(f"Loaded {len(golden_dataset)} evaluation test cases.")
+    print(f"[Step 2/3] Loaded {len(golden_dataset)} golden evaluation queries.", flush=True)
 
-    evaluator = RetrievalEvaluator()
-    groq_judge = GroqRagasJudge()
-    results_rows = []
+    if inspect_sample_steps and golden_dataset:
+        print("\n--- Step-by-Step Lifecycle Inspection (Sample Query 1) ---", flush=True)
+        sample_q = golden_dataset[0]["question"]
+        steps = staged_evaluator.inspect_query_steps(sample_q, top_k=3)
+        print(f"Query: '{sample_q}'", flush=True)
+        print("  • Step 1 (Dense Retrieval)     :", [f"{c['chunk_id']} (dist: {c['dense_dist']})" for c in steps["step_1_dense"][:3]], flush=True)
+        print("  • Step 2 (Sparse BM25)         :", [f"{c['chunk_id']} (score: {c['bm25_score']})" for c in steps["step_2_sparse_bm25"][:3]], flush=True)
+        print("  • Step 3 (RRF Fusion)          :", [f"{c['chunk_id']} (rrf: {c['rrf_score']})" for c in steps["step_3_rrf_fusion"][:3]], flush=True)
+        print("  • Step 4 (FlashRank Rerank)    :", [f"{c['chunk_id']} (score: {c['rerank_score']})" for c in steps["step_4_rerank"][:3]], flush=True)
+        print("----------------------------------------------------------------\n", flush=True)
 
-    cat_metrics_adv: Dict[str, Dict[str, float]] = {}
-    cat_metrics_base: Dict[str, Dict[str, float]] = {}
-    cat_counts: Dict[str, int] = {}
+    print("[Step 3/3] Executing 4-Stage Benchmark across Golden Dataset...", flush=True)
 
-    print("\n[4/4] Executing Comparative Retrieval Evaluation + Groq LLM Judge...\n")
+    stages = [
+        "stage_1_bm25_only",
+        "stage_2_semantic_only",
+        "stage_3_after_filter",
+        "stage_4_hybrid_rerank",
+    ]
+
+    stage_totals: Dict[str, Dict[str, float]] = {s: {} for s in stages}
+    per_query_rows: List[Dict[str, Any]] = []
 
     for item in golden_dataset:
         qid = item["id"]
         qtext = item["question"]
         qtype = item["question_type"]
-        ref_ans = item.get("reference_answer", "")
         expected_ids = item.get("expected_chunk_ids", [])
         required_facts = item.get("required_facts", [])
+        cat_filter = item.get("metadata_filters", {}).get("category")
 
-        # Query Advanced Hybrid Retriever & RAG Search Chain
-        adv_res = adv_retriever.retrieve(qtext, top_k=5)
-        adv_chunks = [{"chunk_id": r.chunk.chunk_id, "text": r.chunk.text} for r in adv_res]
-        adv_metrics = evaluator.evaluate_query(adv_chunks, expected_ids, required_facts)
-
-        # Generate full RAG Search Response
-        rag_response = run_fssai_rag_search(qtext, category=item.get("metadata_filters", {}).get("category", "All"))
-        generated_answer = f"{rag_response.summary}\n\n{rag_response.detailed_analysis}"
-
-        # Query Baseline Retriever
-        base_res = base_retriever.retrieve(qtext, top_k=5)
-        base_chunks = [{"chunk_id": r.chunk.chunk_id, "text": r.chunk.text} for r in base_res]
-        base_metrics = evaluator.evaluate_query(base_chunks, expected_ids, required_facts)
-
-        # DeepEval metric execution
-        adv_contexts = [r.chunk.text for r in adv_res]
-        deepeval_res = run_deepeval_test_case(
+        stage_results = staged_evaluator.evaluate_stages(
             query=qtext,
-            actual_output=generated_answer,
-            retrieved_contexts=adv_contexts,
-            expected_output=ref_ans,
+            expected_chunk_ids=expected_ids,
+            required_facts=required_facts,
+            category_filter=cat_filter,
+            top_k=5,
         )
 
-        # Groq LLM-as-a-Judge evaluation on full generated response
-        judge_res = groq_judge.evaluate_response(
-            query=qtext,
-            retrieved_contexts=adv_contexts,
-            generated_answer=generated_answer,
-            reference_answer=ref_ans,
-        )
+        row: Dict[str, Any] = {"id": qid, "question_type": qtype, "question": qtext}
 
-        # Record CSV row
-        row = {
-            "id": qid,
-            "question_type": qtype,
-            "question": qtext,
-            "adv_hit@5": adv_metrics["hit@5"],
-            "adv_recall@5": adv_metrics["recall@5"],
-            "adv_mrr": adv_metrics["mrr"],
-            "adv_fact_coverage": adv_metrics["fact_coverage"],
-            "base_hit@5": base_metrics["hit@5"],
-            "base_fact_coverage": base_metrics["fact_coverage"],
-            "deepeval_relevancy": deepeval_res.get("answer_relevancy", 0.0),
-            "deepeval_faithfulness": deepeval_res.get("faithfulness", 0.0),
-            "groq_faithfulness": judge_res.get("faithfulness", 0.0),
-            "groq_relevance": judge_res.get("answer_relevance", 0.0),
-            "groq_precision": judge_res.get("context_precision", 0.0),
-            "groq_judge_score": judge_res.get("overall_score", 0.0),
-            "groq_model": judge_res.get("model_used", "none"),
+        for s in stages:
+            m = stage_results[s]
+            for metric_name, val in m.items():
+                stage_totals[s][metric_name] = stage_totals[s].get(metric_name, 0.0) + val
+                row[f"{s}_{metric_name}"] = round(val, 4)
+
+        per_query_rows.append(row)
+
+    tot_queries = len(golden_dataset) if golden_dataset else 1
+    stage_averages: Dict[str, Dict[str, float]] = {}
+    for s in stages:
+        stage_averages[s] = {
+            metric_name: round(val / tot_queries, 4)
+            for metric_name, val in stage_totals[s].items()
         }
-        results_rows.append(row)
-        time.sleep(2.5)  # Rate limiting throttle to prevent Groq API 429
 
-
-
-
-        # Aggregate per-category
-        cat_counts[qtype] = cat_counts.get(qtype, 0) + 1
-        if qtype not in cat_metrics_adv:
-            cat_metrics_adv[qtype] = {"hit@5": 0.0, "mrr": 0.0, "fact_coverage": 0.0}
-            cat_metrics_base[qtype] = {"hit@5": 0.0, "mrr": 0.0, "fact_coverage": 0.0}
-
-        cat_metrics_adv[qtype]["hit@5"] += adv_metrics["hit@5"]
-        cat_metrics_adv[qtype]["mrr"] += adv_metrics["mrr"]
-        cat_metrics_adv[qtype]["fact_coverage"] += adv_metrics["fact_coverage"]
-
-        cat_metrics_base[qtype]["hit@5"] += base_metrics["hit@5"]
-        cat_metrics_base[qtype]["mrr"] += base_metrics["mrr"]
-        cat_metrics_base[qtype]["fact_coverage"] += base_metrics["fact_coverage"]
-
-    # Calculate overall averages
-    tot = len(golden_dataset) if golden_dataset else 1
-    avg_adv_fact_coverage = sum(r["adv_fact_coverage"] for r in results_rows) / tot
-    avg_base_fact_coverage = sum(r["base_fact_coverage"] for r in results_rows) / tot
-    avg_adv_hit5 = sum(r["adv_hit@5"] for r in results_rows) / tot
-    avg_base_hit5 = sum(r["base_hit@5"] for r in results_rows) / tot
-    avg_adv_mrr = sum(r["adv_mrr"] for r in results_rows) / tot
-
-    avg_groq_faithfulness = sum(r["groq_faithfulness"] for r in results_rows) / tot
-    avg_groq_relevance = sum(r["groq_relevance"] for r in results_rows) / tot
-    avg_groq_precision = sum(r["groq_precision"] for r in results_rows) / tot
-    avg_groq_score = sum(r["groq_judge_score"] for r in results_rows) / tot
-
-    out_dir = os.path.join(os.path.dirname(__file__), "results")
+    out_dir = os.path.join(root_dir, "evaluation", "results")
     os.makedirs(out_dir, exist_ok=True)
 
-    csv_path = os.path.join(out_dir, "baseline_vs_advanced.csv")
+    csv_path = os.path.join(out_dir, "staged_evaluation_results.csv")
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=results_rows[0].keys() if results_rows else [])
-        writer.writeheader()
-        writer.writerows(results_rows)
+        if per_query_rows:
+            writer = csv.DictWriter(f, fieldnames=list(per_query_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(per_query_rows)
 
-    category_breakdown = {}
-    for cat in cat_counts:
-        n = cat_counts[cat]
-        category_breakdown[cat] = {
-            "adv_hit@5": round(cat_metrics_adv[cat]["hit@5"] / n, 4),
-            "adv_mrr": round(cat_metrics_adv[cat]["mrr"] / n, 4),
-            "adv_fact_coverage": round(cat_metrics_adv[cat]["fact_coverage"] / n, 4),
-            "base_hit@5": round(cat_metrics_base[cat]["hit@5"] / n, 4),
-            "base_fact_coverage": round(cat_metrics_base[cat]["fact_coverage"] / n, 4),
-        }
-
+    json_path = os.path.join(out_dir, "staged_summary.json")
     summary = {
-        "dataset_size": tot,
-        "overall_metrics": {
-            "advanced_pipeline": {
-                "hit@5": round(avg_adv_hit5, 4),
-                "mrr": round(avg_adv_mrr, 4),
-                "required_fact_coverage": round(avg_adv_fact_coverage, 4),
-            },
-            "baseline_1page_pipeline": {
-                "hit@5": round(avg_base_hit5, 4),
-                "required_fact_coverage": round(avg_base_fact_coverage, 4),
-            },
-            "groq_llm_as_a_judge": {
-                "active": True,
-                "model_used": results_rows[0].get("groq_model", "openai/gpt-oss-20b") if results_rows else "none",
-                "avg_faithfulness": round(avg_groq_faithfulness, 4),
-                "avg_answer_relevance": round(avg_groq_relevance, 4),
-                "avg_context_precision": round(avg_groq_precision, 4),
-                "avg_overall_score": round(avg_groq_score, 4),
-            },
-            "fact_coverage_improvement_pct": round((avg_adv_fact_coverage - avg_base_fact_coverage) * 100, 2),
-        },
-        "category_breakdown": category_breakdown,
+        "dataset_size": tot_queries,
+        "metrics_description": "Evaluated Hit@1, Hit@3, Hit@5, MRR, Recall@5, Fact Coverage (No nDCG)",
+        "stage_progression": stage_averages,
     }
-
-    json_path = os.path.join(out_dir, "summary.json")
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
-    print("\n=======================================================")
-    print("  FINAL EVALUATION BENCHMARK RESULTS")
-    print("=======================================================")
-    print(f"Advanced FSSAI Pipeline Fact Coverage: {avg_adv_fact_coverage * 100:.2f}%")
-    print(f"Baseline 1-Page Pipeline Fact Coverage: {avg_base_fact_coverage * 100:.2f}%")
-    print(f"Advanced Pipeline MRR                : {avg_adv_mrr:.4f}")
-    print(f"Advanced Pipeline Hit@5              : {avg_adv_hit5 * 100:.2f}%")
-    print(f"Groq LLM Judge Faithfulness          : {avg_groq_faithfulness * 100:.2f}%")
-    print(f"Groq LLM Judge Answer Relevance      : {avg_groq_relevance * 100:.2f}%")
-    print(f"Groq LLM Judge Overall Score         : {avg_groq_score * 100:.2f}%\n")
+    print("\n=========================================================================================", flush=True)
+    print("                    PROGRESSION ACROSS ARCHITECTURAL STAGES                              ", flush=True)
+    print("=========================================================================================", flush=True)
+    print(f"{'Stage Name':<26} | {'Hit@1':<8} | {'Hit@3':<8} | {'Hit@5':<8} | {'MRR':<8} | {'Fact Cover':<10}", flush=True)
+    print("-" * 89, flush=True)
+    for s in stages:
+        avg = stage_averages[s]
+        stage_label = s.replace("stage_", "Stage ").replace("_", " ").title()
+        print(
+            f"{stage_label:<26} | {avg['hit@1']*100:>6.1f}% | {avg['hit@3']*100:>6.1f}% | "
+            f"{avg['hit@5']*100:>6.1f}% | {avg['mrr']:>8.4f} | {avg['fact_coverage']*100:>8.1f}%",
+            flush=True,
+        )
+    print("=========================================================================================\n", flush=True)
+    print(f"Detailed CSV Report : {csv_path}", flush=True)
+    print(f"Summary JSON Report : {json_path}\n", flush=True)
 
-
-    print(f"Results written to:")
-    print(f"  - CSV : {csv_path}")
-    print(f"  - JSON: {json_path}")
-    print("=======================================================\n")
+    return summary
 
 
 if __name__ == "__main__":
-    run_benchmark()
+    parser = argparse.ArgumentParser(description="Run NiyamAI Modular Stage & Step RAG Evaluation")
+    parser.add_argument("--use-qdrant", action="store_true", help="Use Qdrant production store instead of Chroma")
+    parser.add_argument("--no-steps", action="store_true", help="Disable step lifecycle preview")
+    args = parser.parse_args()
+
+    run_staged_benchmark(
+        inspect_sample_steps=not args.no_steps,
+        use_chroma=not args.use_qdrant,
+    )

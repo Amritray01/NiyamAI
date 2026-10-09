@@ -1,7 +1,3 @@
-"""
-DeepEval Evaluation Suite Integration for NiyamAI RAG Metrics
-"""
-
 from typing import Any, Dict, List
 
 
@@ -11,13 +7,9 @@ def run_deepeval_test_case(
     retrieved_contexts: List[str],
     expected_output: str = "",
 ) -> Dict[str, Any]:
-    """
-    Executes DeepEval test metrics (LLMTestCase, ContextualRecall, Faithfulness).
-    Falls back gracefully if deepeval is not installed or configured.
-    """
     try:
+        from deepeval.metrics import AnswerRelevancyMetric, FaithfulnessMetric
         from deepeval.test_case import LLMTestCase
-        from deepeval.metrics import AnswerRelevancyMetric, FaithfulnessMetric, ContextualRecallMetric
 
         test_case = LLMTestCase(
             input=query,
@@ -38,7 +30,6 @@ def run_deepeval_test_case(
             "faithfulness": getattr(faithfulness_metric, "score", 0.90),
         }
     except Exception as e:
-        # Fallback scoring when DeepEval API key / local setup is pending
         return {
             "deepeval_available": False,
             "answer_relevancy": 0.88,

@@ -1,16 +1,9 @@
-"""
-Retrieval Evaluation Engine (Recall@K, MRR, nDCG, Hit@K, Fact Coverage)
-"""
-
 from __future__ import annotations
 
-import math
 from typing import Any, Dict, List
 
 
 class RetrievalEvaluator:
-    """Evaluates retrieval quality against ground-truth golden dataset."""
-
     @staticmethod
     def calculate_hit_at_k(retrieved_ids: List[str], expected_ids: List[str], k: int) -> float:
         if not expected_ids:
@@ -36,19 +29,6 @@ class RetrievalEvaluator:
         return 0.0
 
     @staticmethod
-    def calculate_ndcg_at_k(retrieved_ids: List[str], expected_ids: List[str], k: int) -> float:
-        if not expected_ids:
-            return 1.0
-        dcg = 0.0
-        for i, cid in enumerate(retrieved_ids[:k]):
-            if cid in expected_ids:
-                dcg += 1.0 / math.log2(i + 2)
-        
-        # Ideal DCG
-        idcg = sum(1.0 / math.log2(i + 2) for i in range(min(len(expected_ids), k)))
-        return (dcg / idcg) if idcg > 0 else 0.0
-
-    @staticmethod
     def calculate_fact_coverage(retrieved_texts: List[str], required_facts: List[str]) -> float:
         if not required_facts:
             return 1.0
@@ -61,19 +41,16 @@ class RetrievalEvaluator:
         retrieved_chunks: List[Dict[str, Any]],
         expected_chunk_ids: List[str],
         required_facts: List[str],
-        k_values: List[int] = [1, 3, 5, 10],
+        k_values: List[int] = [1, 3, 5],
     ) -> Dict[str, float]:
         retrieved_ids = [c.get("chunk_id", "") for c in retrieved_chunks]
         retrieved_texts = [c.get("text", "") for c in retrieved_chunks]
 
         metrics: Dict[str, float] = {}
-
         for k in k_values:
             metrics[f"hit@{k}"] = self.calculate_hit_at_k(retrieved_ids, expected_chunk_ids, k)
             metrics[f"recall@{k}"] = self.calculate_recall_at_k(retrieved_ids, expected_chunk_ids, k)
-            metrics[f"ndcg@{k}"] = self.calculate_ndcg_at_k(retrieved_ids, expected_chunk_ids, k)
 
         metrics["mrr"] = self.calculate_mrr(retrieved_ids, expected_chunk_ids)
         metrics["fact_coverage"] = self.calculate_fact_coverage(retrieved_texts, required_facts)
-
         return metrics

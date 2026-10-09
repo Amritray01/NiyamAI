@@ -1,0 +1,46 @@
+{
+  "dataset_size": 25,
+  "metrics_description": "Evaluated Hit@1, Hit@3, Hit@5, MRR, Recall@5, Fact Coverage (No nDCG)",
+  "stage_progression": {
+    "stage_1_bm25_only": {
+      "hit@1": 0.04,
+      "recall@1": 0.0133,
+      "hit@3": 0.04,
+      "recall@3": 0.0133,
+      "hit@5": 0.04,
+      "recall@5": 0.0133,
+      "mrr": 0.04,
+      "fact_coverage": 0.25
+    },
+    "stage_2_semantic_only": {
+      "hit@1": 0.04,
+      "recall@1": 0.0133,
+      "hit@3": 0.04,
+      "recall@3": 0.0133,
+      "hit@5": 0.16,
+      "recall@5": 0.0533,
+      "mrr": 0.068,
+      "fact_coverage": 0.21
+    },
+    "stage_3_after_filter": {
+      "hit@1": 0.04,
+      "recall@1": 0.0133,
+      "hit@3": 0.04,
+      "recall@3": 0.0133,
+      "hit@5": 0.16,
+      "recall@5": 0.0533,
+      "mrr": 0.068,
+      "fact_coverage": 0.21
+    },
+    "stage_4_hybrid_rerank": {
+      "hit@1": 0.0,
+      "recall@1": 0.0,
+      "hit@3": 0.08,
+      "recall@3": 0.0267,
+      "hit@5": 0.2,
+      "recall@5": 0.08,
+      "mrr": 0.068,
+      "fact_coverage": 0.24
+    }
+  }
+}
