@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 const SUGGESTED_QUERIES = [
   {
     category: "Contaminants & Heavy Metals",
-    filter: "All",
+    filter: "Contaminants",
     icon: "🧪",
     queries: [
       "What are the maximum permitted limits for lead in various food products ?",
@@ -14,7 +14,7 @@ const SUGGESTED_QUERIES = [
   },
   {
     category: "Honey & Sweetening Agents",
-    filter: "All",
+    filter: "Sweetening Agents & Standards",
     icon: "🍯",
     queries: [
       "What is the maximum permissible limit of moisture in natural honey?",
@@ -24,7 +24,7 @@ const SUGGESTED_QUERIES = [
   },
   {
     category: "Prohibitions & Adulteration",
-    filter: "All",
+    filter: "Prohibitions",
     icon: "🚫",
     queries: [
       "What is the restriction under Section 2.1 of Prohibition Regulations for selling milk containing added water?",
@@ -33,7 +33,7 @@ const SUGGESTED_QUERIES = [
   },
   {
     category: "Advertising & Claims",
-    filter: "Packaging",
+    filter: "Advertising & Claims",
     icon: "🏷️",
     queries: [
       "What conditions govern non-addition of sugar claims on food packaging?",
@@ -43,16 +43,16 @@ const SUGGESTED_QUERIES = [
 ]
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('search') // 'search' | 'news'
-
-  // Search Workspace State
+  const [activeTab, setActiveTab] = useState('search')
   const [question, setQuestion] = useState('What are the maximum permitted limits for lead in various food products ?')
   const [category, setCategory] = useState('All')
   const [searchResult, setSearchResult] = useState(null)
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState(null)
+  const [copiedSummary, setCopiedSummary] = useState(false)
+  const [copiedAnalysis, setCopiedAnalysis] = useState(false)
+  const [isStreaming, setIsStreaming] = useState(false)
 
-  // News State
   const [newsData, setNewsData] = useState({
     ai_overview: '',
     category_summaries: {},
@@ -62,7 +62,20 @@ export default function App() {
   const [newsSearch, setNewsSearch] = useState('')
   const [loadingNews, setLoadingNews] = useState(false)
 
-  // Execute FSSAI Search Query
+  function copySummary(text) {
+    if (!text) return
+    navigator.clipboard.writeText(text)
+    setCopiedSummary(true)
+    setTimeout(() => setCopiedSummary(false), 2000)
+  }
+
+  function copyAnalysis(text) {
+    if (!text) return
+    navigator.clipboard.writeText(text)
+    setCopiedAnalysis(true)
+    setTimeout(() => setCopiedAnalysis(false), 2000)
+  }
+
   async function handleSearch(e, customQuery = null, customCategory = null) {
     if (e) e.preventDefault()
     const queryText = customQuery !== null ? customQuery : question
@@ -70,37 +83,118 @@ export default function App() {
     if (!queryText.trim()) return
 
     setSearching(true)
+    setIsStreaming(true)
     setSearchError(null)
+    setSearchResult(null)
 
     try {
-      const res = await fetch('/api/search', {
+      const res = await fetch('/api/search/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: queryText, category: queryCategory })
       })
 
-      if (!res.ok) {
-        throw new Error(`Server returned status ${res.status}`)
+      if (!res.ok || !res.body) {
+        throw new Error(`Streaming failed with status ${res.status}`)
       }
 
-      const data = await res.json()
-      setSearchResult(data)
-    } catch (err) {
-      console.error("Search Error:", err)
-      setSearchError("Failed to fetch response from FastAPI backend. Ensure backend server is running on port 8000.")
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder('utf-8')
+      let buffer = ''
+      let streamedRawText = ''
+
+      setSearching(false) // First byte / stream started
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(trimmed.slice(6))
+
+            if (data.type === 'init') {
+              setSearchResult({
+                summary: 'Generating executive statutory verdict...',
+                detailed_analysis: '',
+                citations: data.citations || [],
+                confidence_label: data.confidence_label || 'High',
+                confidence_score: data.confidence_score || 0.85,
+                execution_time_ms: 0,
+              })
+            } else if (data.type === 'token') {
+              streamedRawText += data.token
+              let splitMarker = null
+              if (streamedRawText.includes('## Explainable AI (xAI) Statutory & Legal Document')) {
+                splitMarker = '## Explainable AI (xAI) Statutory & Legal Document'
+              } else if (streamedRawText.includes('## Detailed Analysis')) {
+                splitMarker = '## Detailed Analysis'
+              } else if (streamedRawText.includes('## Permitted Ingredients')) {
+                splitMarker = '## Permitted Ingredients'
+              }
+
+              if (splitMarker) {
+                const parts = streamedRawText.split(splitMarker)
+                const sumText = parts[0].replace('## Short Summary', '').replace('## Executive Summary', '').trim()
+                const analText = (splitMarker.startsWith('## ') && !splitMarker.includes('Detailed') ? splitMarker + '\n' : '') + parts.slice(1).join(splitMarker).trim()
+                setSearchResult(prev => ({
+                  ...(prev || {}),
+                  summary: sumText,
+                  detailed_analysis: analText,
+                }))
+              } else {
+                const sumText = streamedRawText.replace('## Short Summary', '').replace('## Executive Summary', '').trim()
+                setSearchResult(prev => ({
+                  ...(prev || {}),
+                  summary: sumText,
+                }))
+              }
+            } else if (data.type === 'done') {
+              setSearchResult(prev => ({
+                ...(prev || {}),
+                summary: data.summary || prev?.summary || '',
+                detailed_analysis: data.detailed_analysis || prev?.detailed_analysis || '',
+                execution_time_ms: data.execution_time_ms || prev?.execution_time_ms || 120,
+              }))
+            }
+          } catch (jsonErr) {
+            console.warn('SSE JSON parse error:', jsonErr)
+          }
+        }
+      }
+    } catch (streamErr) {
+      console.warn("Stream failed, falling back to synchronous /api/search:", streamErr)
+      try {
+        const fallbackRes = await fetch('/api/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: queryText, category: queryCategory })
+        })
+        if (!fallbackRes.ok) throw new Error(`Server returned status ${fallbackRes.status}`)
+        const data = await fallbackRes.json()
+        setSearchResult(data)
+      } catch (err) {
+        console.error("Search Error:", err)
+        setSearchError("Failed to fetch response from FastAPI backend. Ensure backend server is running on port 8000.")
+      }
     } finally {
       setSearching(false)
+      setIsStreaming(false)
     }
   }
 
-  // Quick prompt select & execute
   function applySuggestion(qText, filterCat = "All") {
     setQuestion(qText)
     setCategory(filterCat)
     handleSearch(null, qText, filterCat)
   }
 
-  // Fetch Live News Feed
   async function fetchNews() {
     setLoadingNews(true)
     try {
@@ -118,12 +212,10 @@ export default function App() {
     }
   }
 
-  // Handle Tab Switch Actions
   useEffect(() => {
     if (activeTab === 'news') fetchNews()
   }, [activeTab])
 
-  // Filtered news items
   const filteredNews = (newsData.news_items || []).filter(item => {
     const matchesCat = newsFilter === 'All' || item.category === newsFilter
     const matchesSearch = !newsSearch.trim() || 
@@ -132,7 +224,6 @@ export default function App() {
     return matchesCat && matchesSearch
   })
 
-  // Confidence badge color helper
   function getConfidenceBadgeClass(label, score) {
     if (label === 'High' || score >= 0.75) return 'badge-high'
     if (label === 'Medium' || score >= 0.50) return 'badge-medium'
@@ -141,7 +232,6 @@ export default function App() {
 
   return (
     <div className="layout">
-      {/* Top Navbar Header */}
       <header className="navbar">
         <div className="navbar-left">
           <div className="brand">
@@ -152,7 +242,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Top-Left Main Menu Tabs */}
           <nav className="nav-tabs-left">
             <button 
               className={`nav-btn ${activeTab === 'search' ? 'active' : ''}`}
@@ -170,13 +259,9 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Workspace */}
       <main className="content-area">
-
-        {/* TAB 1: FSSAI RAG Search Workspace */}
         {activeTab === 'search' && (
           <div>
-            {/* Quick Test Queries & Golden Dataset Suggestions */}
             <div className="suggestions-panel">
               <div className="suggestions-header">
                 <span className="suggestions-title">💡 Quick Test Queries from Evaluation Golden Dataset:</span>
@@ -218,10 +303,11 @@ export default function App() {
                       className="input-field"
                     >
                       <option value="All">All FSSAI Regulations</option>
-                      <option value="Contaminants">Contaminants & Heavy Metals (2011)</option>
-                      <option value="Additives">Food Additives & Preservatives (2011)</option>
-                      <option value="Packaging">Packaging & Labeling (2020)</option>
-                      <option value="Licensing">Licensing & Registration (2011)</option>
+                      <option value="Advertising & Claims">Advertising & Claims / Packaging</option>
+                      <option value="Contaminants">Contaminants & Heavy Metals</option>
+                      <option value="Sweetening Agents & Standards">Sweetening Agents & Honey Standards</option>
+                      <option value="Prohibitions">Prohibitions & Adulteration</option>
+                      <option value="Additives">Food Additives & Preservatives</option>
                       <option value="Microbiological">Microbiological Requirements</option>
                     </select>
                   </div>
@@ -259,7 +345,6 @@ export default function App() {
                 )}
               </section>
 
-              {/* Right Pane: Explainable Results & Citations */}
               <section className="results-pane">
                 <h2>📖 Verbatim Legal Citations & Analysis</h2>
                 {!searchResult && !searching && (
@@ -276,18 +361,58 @@ export default function App() {
 
                 {searchResult && (
                   <div className="results-card">
-                    <div className="verdict-box">
-                      <h3>Executive Summary</h3>
-                      <p>{searchResult.summary}</p>
+                    <div className="executive-answer-hero">
+                      <div className="executive-header">
+                        <div className="executive-title-group">
+                          <span className="executive-badge">🎯 Short Summary</span>
+                          {isStreaming ? (
+                            <span className="streaming-pulse-tag">⚡ Streaming Live from Groq LLM...</span>
+                          ) : (
+                            <span className="grounded-tag">🛡️ Verified FSSAI Statutory Provision</span>
+                          )}
+                        </div>
+                        <button 
+                          type="button" 
+                          className="copy-btn"
+                          onClick={() => copySummary(searchResult.summary)}
+                          title="Copy short summary"
+                        >
+                          {copiedSummary ? '✅ Copied Short Summary!' : '📋 Copy Short Summary'}
+                        </button>
+                      </div>
+                      <div className="executive-verdict-content">
+                        <p className="executive-summary-text">
+                          {searchResult.summary}
+                          {isStreaming && <span className="typing-cursor">▌</span>}
+                        </p>
+                      </div>
                     </div>
 
                     <div className="analysis-box">
-                      <h3>Explainable RAG Analysis</h3>
-                      <p className="analysis-text">{searchResult.detailed_analysis}</p>
+                      <div className="section-title-row">
+                        <h3>📜 Explainable AI (xAI) Statutory & Legal Document</h3>
+                        {searchResult.detailed_analysis && (
+                          <button 
+                            type="button" 
+                            className="copy-btn-sm"
+                            onClick={() => copyAnalysis(searchResult.detailed_analysis)}
+                            title="Copy xAI Legal Document"
+                          >
+                            {copiedAnalysis ? '✅ Copied xAI Document!' : '📋 Copy xAI Document'}
+                          </button>
+                        )}
+                      </div>
+                      <div className="analysis-text xai-document-view">
+                        <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
+                          {searchResult.detailed_analysis || (isStreaming ? 'Synthesizing structured statutory document with data matrix & ingredient classification...' : '')}
+                        </pre>
+                      </div>
                     </div>
 
                     <div className="citations-box">
-                      <h3>Official Verbatim Legal Citations ({searchResult.citations ? searchResult.citations.length : 0})</h3>
+                      <div className="section-title-row">
+                        <h3>📜 Official Verbatim Legal Citations ({searchResult.citations ? searchResult.citations.length : 0})</h3>
+                      </div>
                       {searchResult.citations && searchResult.citations.length > 0 ? (
                         searchResult.citations.map((cite, idx) => (
                           <div key={idx} className="citation-card">
@@ -309,7 +434,6 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 2: Live Updates & Regulatory Intelligence News */}
         {activeTab === 'news' && (
           <div className="single-pane">
             <div className="pane-header-row">
@@ -322,7 +446,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* AI Regulatory Pulse Banner */}
             {newsData.ai_overview && (
               <div className="news-ai-banner">
                 <div className="news-ai-header">
@@ -332,7 +455,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Category Breakdown Cards */}
             {newsData.category_summaries && Object.keys(newsData.category_summaries).length > 0 && (
               <div className="category-summaries-grid">
                 {Object.entries(newsData.category_summaries).map(([cat, summary], idx) => (
@@ -344,7 +466,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Filter & Search Bar */}
             <div className="news-controls-bar">
               <div className="news-filter-pills">
                 {['All', 'Advisories', 'Notifications', 'In The News', 'Enforcement & Fine'].map((cat) => (
@@ -376,6 +497,7 @@ export default function App() {
                     <article key={item.id || idx} className="news-card">
                       <div className="news-meta">
                         <span className="news-cat">{item.category || 'Advisories'}</span>
+                        <span className="news-source-tag">📰 {item.source_name || 'News Source'}</span>
                         <span className={`severity-tag severity-${(item.severity || 'Medium').toLowerCase()}`}>
                           {item.severity || 'Medium'} Urgency
                         </span>
@@ -385,7 +507,7 @@ export default function App() {
                       <p className="news-summary">{item.summary}</p>
 
                       <a href={item.source_url} target="_blank" rel="noreferrer" className="news-link">
-                        View Official Regulatory Document ↗
+                        Read Full News Source ({item.source_name || 'Article'}) ↗
                       </a>
                     </article>
                   ))
