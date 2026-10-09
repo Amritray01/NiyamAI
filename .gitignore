@@ -15,3 +15,5 @@ Thumbs.db
 .niyam-env
 baseline_chroma/
 niyamai_chroma/
+niyamai_qdrant/
+deep-research-report.md
