@@ -1,14 +1,11 @@
-"""
-Chunking Strategies for FSSAI Documents (Table Row, Clause, & Baseline 1-Page)
-"""
-
 from __future__ import annotations
 
 import hashlib
+import re
 from typing import Any, Dict, List, Optional
 from bs4 import BeautifulSoup
 
-from app.rag.models import ChunkType, FSSAIChunk, ClauseMetadata
+from app.rag.models import ChunkType, ClauseMetadata, FSSAIChunk
 from app.rag.parsers import FootnoteRegistry
 
 
@@ -16,18 +13,13 @@ def generate_deterministic_chunk_id(
     source_doc: str,
     chunk_type: str,
     identifier: str,
-    text_snippet: str
+    text_snippet: str,
 ) -> str:
-    """
-    Generates a deterministic 16-character SHA-256 chunk ID.
-    Guarantees stable chunk IDs across evaluation & ingestion runs.
-    """
     raw_str = f"{source_doc}:{chunk_type}:{identifier}:{text_snippet}"
     return "chunk_" + hashlib.sha256(raw_str.encode("utf-8")).hexdigest()[:12]
 
 
 class FSSAITableChunker:
-    """Row-level chunker for FSSAI tables."""
     _FOOD_COL_CANDIDATES = ["food category", "food product", "product", "food item", "article of food", "name of food"]
     _PARAM_COL_CANDIDATES = ["parameter", "microorganism", "contaminant", "additive", "substance", "test", "limit"]
 
@@ -69,7 +61,6 @@ class FSSAITableChunker:
                 self.source_doc, ChunkType.TABLE_ROW.value, f"pg_{page}_tbl_{table_idx}_row_{row_idx}", raw_text
             )
 
-
             metadata: Dict[str, Any] = {
                 "regulation_id": self.regulation_id,
                 "category": self.category,
@@ -90,6 +81,7 @@ class FSSAITableChunker:
                 source_doc=self.source_doc,
                 page_numbers=[page],
                 text=raw_text,
+                display_text=raw_text,
                 embedding_text=embed_text,
                 metadata=metadata,
                 raw_html=row_html,
@@ -97,13 +89,26 @@ class FSSAITableChunker:
             ))
         return chunks
 
-    @staticmethod
-    def _extract_headers(soup: BeautifulSoup) -> List[str]:
+    def _extract_headers(self, soup: BeautifulSoup) -> List[str]:
+        raw_headers = []
         thead = soup.find("thead")
         if thead:
-            return [th.get_text(strip=True) for th in thead.find_all(["th", "td"])]
-        rows = soup.find_all("tr")
-        return [th.get_text(strip=True) for th in rows[0].find_all(["th", "td"])] if rows else []
+            raw_headers = [th.get_text(strip=True) for th in thead.find_all(["th", "td"])]
+        if not raw_headers:
+            rows = soup.find_all("tr")
+            raw_headers = [th.get_text(strip=True) for th in rows[0].find_all(["th", "td"])] if rows else []
+
+        # Normalize generic or column index headers (e.g. ['(1)', '(2)', '(3)'])
+        is_generic = not raw_headers or all(re.match(r"^(\(\d+\)|col_\d+|\d+)$", h.lower().strip()) for h in raw_headers if h)
+        if is_generic:
+            if len(raw_headers) == 3:
+                return ["Parameter / Contaminant", "Article of Food", "Maximum Permitted Limit (ppm / mg/kg)"]
+            elif len(raw_headers) == 4:
+                return ["Parameter / Contaminant", "Category / Class", "Article of Food", "Maximum Permitted Limit (ppm / mg/kg)"]
+            elif len(raw_headers) == 2:
+                return ["Article of Food / Parameter", "Standard / Limit"]
+
+        return [h if h else f"Col_{i+1}" for i, h in enumerate(raw_headers)]
 
     @staticmethod
     def _find_value(row: Dict[str, str], candidates: List[str]) -> Optional[str]:
@@ -113,17 +118,23 @@ class FSSAITableChunker:
                     return row[key] or None
         return None
 
-    @staticmethod
-    def _to_embedding_text(row_data: Dict[str, str], footnotes: List[str]) -> str:
-        meaningful = [f"{k} is {v}" for k, v in row_data.items() if v and v not in ("--", "N/A", "Nil", "")]
-        text = "In this FSSAI regulation table, " + ", ".join(meaningful) + "."
+    def _to_embedding_text(self, row_data: Dict[str, str], footnotes: List[str]) -> str:
+        param = self._find_value(row_data, self._PARAM_COL_CANDIDATES) or row_data.get("Parameter / Contaminant") or row_data.get("(1)") or ""
+        food = self._find_value(row_data, self._FOOD_COL_CANDIDATES) or row_data.get("Article of Food") or row_data.get("(2)") or ""
+        limit = row_data.get("Maximum Permitted Limit (ppm / mg/kg)") or row_data.get("Maximum Permitted Limit") or row_data.get("Limit") or row_data.get("(3)") or ""
+
+        if param and food and limit:
+            text = f"Under FSSAI Statutory Regulations for {self.category}, the maximum permitted limit for {param} in {food} is {limit}."
+        else:
+            meaningful = [f"{k} is {v}" for k, v in row_data.items() if v and v not in ("--", "N/A", "Nil", "")]
+            text = f"In FSSAI {self.category} regulation schedule table, " + ", ".join(meaningful) + "."
+
         if footnotes:
-            text += " Additional notes: " + "; ".join(footnotes) + "."
+            text += f" Additional statutory footnote notes: {'; '.join(footnotes)}."
         return text
 
 
 class FSSAIClauseChunker:
-    """Sliding window chunker for regulation clauses."""
     MAX_CHARS = 800
     OVERLAP_CHARS = 120
 
@@ -157,7 +168,8 @@ class FSSAIClauseChunker:
                 self.source_doc, ChunkType.CLAUSE.value, clause_path, checksum
             )
 
-            # Build enriched embedding text
+            normalized_seg = re.sub(r"\.{4,}|_{4,}", "[STATUTORY_FORM_PLACEHOLDER]", segment)
+
             prefix = ""
             if not segment.startswith("["):
                 header_parts = [self.document_title]
@@ -166,8 +178,8 @@ class FSSAIClauseChunker:
                 elif clause_id and clause_id != "General":
                     header_parts.append(f"Regulation {clause_id}")
                 prefix = f"[{' | '.join(header_parts)}]\n"
-            
-            embed_text = prefix + segment
+
+            embed_text = prefix + normalized_seg
 
             metadata: Dict[str, Any] = {
                 "regulation_id": self.regulation_id,
@@ -192,6 +204,7 @@ class FSSAIClauseChunker:
                 source_doc=self.source_doc,
                 page_numbers=[page],
                 text=segment,
+                display_text=segment,
                 embedding_text=embed_text,
                 metadata=metadata,
             ))
@@ -201,7 +214,8 @@ class FSSAIClauseChunker:
     def _sliding_window(text: str, max_chars: int, overlap: int) -> List[str]:
         if len(text) <= max_chars:
             return [text]
-        segments, start = [], 0
+        segments: List[str] = []
+        start = 0
         while start < len(text):
             segments.append(text[start : start + max_chars])
             start += max_chars - overlap
@@ -216,10 +230,12 @@ class FSSAIClauseChunker:
             return "Contaminants"
         if any(w in t for w in ["coliform", "salmonella", "yeast", "mould", "microbiolog"]):
             return "Microbiological"
-        if any(w in t for w in ["label", "claim", "marking", "display", "advertising"]):
-            return "Labelling"
+        if any(w in t for w in ["label", "claim", "marking", "display", "advertising", "packaging"]):
+            return "Advertising & Claims"
         if any(w in t for w in ["honey", "sweetener", "sugar", "jaggery"]):
-            return "Sweetening agents"
+            return "Sweetening Agents & Standards"
+        if any(w in t for w in ["prohibit", "adulteran", "restriction on sale"]):
+            return "Prohibitions"
         return None
 
     @staticmethod
@@ -239,8 +255,6 @@ class FSSAIClauseChunker:
 
 
 class Baseline1PageChunker:
-    """Naive 1-page text chunker used strictly as an evaluation baseline."""
-
     def __init__(self, source_doc: str, regulation_id: str) -> None:
         self.source_doc = source_doc
         self.regulation_id = regulation_id
